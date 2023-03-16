@@ -28,6 +28,20 @@ pub async fn discover(data: Arc<Mutex<SharedDevices>>) {
     let service_name = format!("_{}._{}.local", SERVICE_NAME, SERVICE_PROTOCOL);
     println!("Starting mDNS discovery for {} with zeroconf", service_name);
 
+    let mut lock = data.lock().await;
+    let uuid = "00008110-000A4842149B801E";
+    let addr = "192.168.199.174";
+
+    lock.add_network_device(
+        udid,
+        addr,
+        service_name.clone(),
+        "Network".to_string(),
+        data.clone(),
+        );
+    println!("Starting mDNS discovery for {} with zeroconf XXXXX", service_name);
+    return;
+
     let mut browser = MdnsBrowser::new(ServiceType::new(SERVICE_NAME, SERVICE_PROTOCOL).unwrap());
     loop {
         let result = browser.browse_async().await;
@@ -69,48 +83,33 @@ pub async fn discover(data: Arc<Mutex<SharedDevices>>) {
     let service_name = format!("_{}._{}.local", SERVICE_NAME, SERVICE_PROTOCOL);
     println!("Starting mDNS discovery for {} with mdns", service_name);
 
-    let stream = mdns::discover::all(&service_name, Duration::from_secs(5))
-        .unwrap()
-        .listen();
-    pin_mut!(stream);
+    let mut uuid = std::env::var("UUID").unwrap_or("00008110-000A4842149B801E".to_string());
+    let mut xaddr = std::env::var("ADDR").unwrap_or("127.0.0.1".to_string());
+    let mut mac_addr = std::env::var("MAC").unwrap_or("30:d5:3e:4f:a7:dc".to_string());
+    loop {
+        std::thread::sleep(Duration::from_secs(3));
+        let mut lock = data.lock().await;
+        let addr = std::net::IpAddr::V4(xaddr.parse().unwrap());
+        lock.get_udid_from_mac(mac_addr.to_string());
 
-    while let Some(Ok(response)) = stream.next().await {
-        let addr = response.records().filter_map(self::to_ip_addr).next();
-
-        if let Some(mut addr) = addr {
-            let mut mac_addr = None;
-            for i in response.records() {
-                if let RecordKind::A(addr4) = i.kind {
-                    addr = std::net::IpAddr::V4(addr4)
-                }
-                if i.name.contains(&service_name) && i.name.contains('@') {
-                    mac_addr = Some(i.name.split('@').collect::<Vec<&str>>()[0]);
-                }
-            }
-
-            // Look through paired devices for mac address
-            if mac_addr.is_none() {
+        if let Ok(udid) = lock.get_udid_from_mac(mac_addr.to_string()) {
+            if lock.devices.contains_key(&udid) {
+                info!("Device has already been added to muxer, skipping");
                 continue;
             }
-            let mac_addr = mac_addr.unwrap();
-            let mut lock = data.lock().await;
-            if let Ok(udid) = lock.get_udid_from_mac(mac_addr.to_string()) {
-                if lock.devices.contains_key(&udid) {
-                    info!("Device has already been added to muxer, skipping");
-                    continue;
-                }
-                println!("Adding device {}", udid);
-
-                lock.add_network_device(
-                    udid,
-                    addr,
-                    service_name.clone(),
-                    "Network".to_string(),
-                    data.clone(),
-                )
-            }
         }
+
+
+        lock.add_network_device(
+            uuid.clone(),
+            addr,
+            service_name.clone(),
+            "Network".to_string(),
+            data.clone(),
+            );
+        println!("Starting mDNS discovery for {} with mdns XXXX", service_name);
     }
+
 }
 
 #[cfg(not(feature = "zeroconf"))]
